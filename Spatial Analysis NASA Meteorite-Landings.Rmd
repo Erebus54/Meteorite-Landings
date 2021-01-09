@@ -6,25 +6,164 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+library(rmarkdown)
+library(leaflet)
+library(leaflet.providers)
+library(leaflet.extras)
+
+library(spatialEco)
+library(sp)
+
+library(highcharter) 
+
+# Set highcharter options
+options(highcharter.theme = hc_theme_smpl(tooltip = list(valueDecimals = 2)))
+
+meteorites <- read.csv("./meteorite-landings.csv", encoding = "UTF-8")
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+summary(meteorites)
 ```
 
-## Including Plots
+The dataset contains the following variables:
 
-You can also embed plots, for example:
+* name: the name of the meteorite (typically a location, often modified with a number, year, composition, etc)
+id: a unique identifier for the meteorite
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+* nametype: one of:
+  * valid: a typical meteorite
+  * relict: a meteorite that has been highly degraded by weather on Earth
+  
+* recclass: the class of the meteorite; one of a large number of classes based on physical, chemical, and other characteristics (see the Wikipedia article on [meteorite classification](https://en.wikipedia.org/wiki/Meteorite_classification) for a primer)
+
+* mass: the mass of the meteorite, in grams
+
+* fall: whether the meteorite was seen falling, or was discovered after its impact; one of:
+  * Fell: the meteorite's fall was observed
+  * Found: the meteorite's fall was not observed
+
+* year: the year the meteorite fell, or the year it was found (depending on the value of fell)
+* reclat: the latitude of the meteorite's landing
+* reclong: the longitude of the meteorite's landing
+* GeoLocation: a parentheses-enclose, comma-separated tuple that combines reclat and reclong
+
+# Data Cleaning 
+
+We'll clean out incorrect reccomended lat/long coordinates, we'll also filter for USA via using a bounding box for lat/long within the most north/south/east/west bounds of the continental US. 
+
+
+```{r}
+meteorites <- meteorites %>% 
+  dplyr::filter(year >= 860 & year <= 2016 ) %>%   # filter out weird years
+  dplyr::filter(reclat != 0 | reclong != 0) %>% 
+  dplyr::arrange(desc(year)) %>% 
+  dplyr::filter(!is.na(mass)) %>% 
+  dplyr::filter(mass > 0) %>% 
+  dplyr::mutate(year = as.numeric(year))
+
+# src for bbox 
+# https://gist.github.com/graydon/11198540
+
+meteorites_clean <- meteorites %>% 
+  dplyr::filter(reclat <= 49.3457868 & reclat >= 24.7433195) %>% #filter for north and south 
+  dplyr::filter(reclong >=  -124.7844079 & reclong <= -66.9513812) # filter for east and west 
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Meteorites by Mass
+
+```{r, fig.width = 8}
+pal <- colorNumeric(palette = "RdYlBu", domain = meteorites_clean$mass, reverse = T)
+
+leaflet(data = meteorites_clean, height=500, width=910) %>% 
+  addFullscreenControl() %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  addCircleMarkers(lng = ~reclong, lat = ~reclat,
+                   color = ~pal(mass), 
+                   radius = 3, 
+                   stroke = FALSE, fillOpacity = 0.5) %>% 
+  
+  addLegend("bottomright", pal = pal, values = ~mass,
+            title = "Mass (grams)",
+            labFormat = labelFormat(suffix = " g"),
+            opacity = 1
+  )
+```
+
+
+## Heatmap of Meteorite impacts 
+
+```{r}
+leaflet(data = meteorites_clean, height=500, width=910) %>% 
+  addFullscreenControl() %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  addHeatmap(lng = ~reclong, lat = ~reclat, 
+             gradient = "viridis", 
+             minOpacity = 0.1, 
+             cellSize = 1, 
+             radius = 3, blur = 15)
+```
+
+
+## Meteorites by Observed Status 
+
+Here we'll visualize the meteorites via whether they were spotted on the ground after impact ("found") or while in the mid-fall ("fell)
+
+Overwhelmingly we can see most meteorites were spotted while on the ground after-impact was made, we have modified the size argument to help make the quantity more acute on our map. 
+```{r, fig.width = 8}
+
+pal <- colorFactor(c("#6EC5E9", "#FF1C51"), domain = c("Fell", "Found"))
+
+leaflet(data = meteorites_clean, height=500, width=910) %>% 
+  addFullscreenControl() %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  addCircleMarkers(lng = ~reclong, lat = ~reclat,
+                   color = ~pal(fall), 
+                   radius = ~ifelse(fall == "Found", 1, 3),
+                   stroke = FALSE, fillOpacity = 1) %>% 
+  
+  addLegend("bottomright", pal = pal, values = ~fall,
+            title = "Found Status",
+            opacity = 1)
+```
+
+Frequency distribtion by year 
+
+```{r}
+hchart(meteorites_clean$year,
+          color = "Purple", 
+          name = "year") %>% 
+  
+  hc_yAxis(title = list(text = "Frequency (n)")) %>% 
+  hc_xAxis(title = list(text = "<b> Year Observed </b>")) %>% 
+  hc_add_theme(hc_theme_monokai())
+```
+
+## Meteorites via Classification  
+
+Examining wether 
+
+
+# Hot Spot Spatial Analysis 
+
+Useful good [here](https://www.publichealth.columbia.edu/research/population-health-methods/hot-spot-spatial-analysis)
+
+## Test for spatial autocorrelation/clustering in data
+
+```{r}
+xy <- meteorites_clean[,c(9,8)]
+
+meteorites_clean <- SpatialPointsDataFrame(coords = xy, data = meteorites_clean,
+                               proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+print(nni(meteorites_clean))
+```
+
+
+Our NNI score is less than 1, we can consider this as a good indication of clustering and can reject the Null Hypothesis that the points are uniform in pattern
+
+## Create the hotspot map
+## Define the hotspot map legend threshold
