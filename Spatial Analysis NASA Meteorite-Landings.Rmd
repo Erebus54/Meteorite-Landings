@@ -1,8 +1,11 @@
 ---
-title: 'Spatial Analysis: NASA Meteorite-Landings'
+title: 'Point Pattern Analysis: NASA Meteorite-Landings'
 author: "Patrick Reza Schnurbusch"
-date: "08/01/2021"
-output: html_document
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+      theme: darkly
+      code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -15,8 +18,17 @@ library(leaflet.extras)
 
 library(spatialEco)
 library(sp)
+library(sf)
+
+library(spatstat)
 
 library(highcharter) 
+
+# for downloading US state shp files 
+library(tigris)
+
+
+library("USAboundaries")
 
 # Set highcharter options
 options(highcharter.theme = hc_theme_smpl(tooltip = list(valueDecimals = 2)))
@@ -24,11 +36,13 @@ options(highcharter.theme = hc_theme_smpl(tooltip = list(valueDecimals = 2)))
 meteorites <- read.csv("./meteorite-landings.csv", encoding = "UTF-8")
 ```
 
-```{r}
-summary(meteorites)
-```
 
-The dataset contains the following variables:
+
+This dataset was obtained from Kaggle [here](https://www.kaggle.com/nasa/meteorite-landings) and includes the latitude and longitude of meteorite impacts. This dataset includes 45,000 meteorite imapacts, in this analysis we will be examining those impacting the United States specifically. 
+
+Our goal is to apply point-pattern analysis and areal statistics to this dataset. 
+
+The dataset also contains the following variables:
 
 * name: the name of the meteorite (typically a location, often modified with a number, year, composition, etc)
 id: a unique identifier for the meteorite
@@ -37,25 +51,22 @@ id: a unique identifier for the meteorite
   * valid: a typical meteorite
   * relict: a meteorite that has been highly degraded by weather on Earth
   
-* recclass: the class of the meteorite; one of a large number of classes based on physical, chemical, and other characteristics (see the Wikipedia article on [meteorite classification](https://en.wikipedia.org/wiki/Meteorite_classification) for a primer)
+* recclass: the class of the meteorite; one of a large number of [meteorite classifications](https://en.wikipedia.org/wiki/Meteorite_classification) based on physical, chemical, and other characteristics 
 
-* mass: the mass of the meteorite, in grams
+* mass: the mass of the meteorite (grams)
 
-* fall: whether the meteorite was seen falling, or was discovered after its impact; one of:
-  * Fell: the meteorite's fall was observed
-  * Found: the meteorite's fall was not observed
+* fall: 
+  * Fell - the meteorite's was observed before impact midfall
+  * Found: the meteorite's was observed after impact
 
-* year: the year the meteorite fell, or the year it was found (depending on the value of fell)
+* year: the year the meteorite fell, or the year it was found (depends on the value of fell)
 * reclat: the latitude of the meteorite's landing
 * reclong: the longitude of the meteorite's landing
-* GeoLocation: a parentheses-enclose, comma-separated tuple that combines reclat and reclong
-
-# Data Cleaning 
-
-We'll clean out incorrect reccomended lat/long coordinates, we'll also filter for USA via using a bounding box for lat/long within the most north/south/east/west bounds of the continental US. 
-
+* GeoLocation: a parentheses-enclose, comma-separated value of the reclat & reclong
 
 ```{r}
+# data cleaning 
+
 meteorites <- meteorites %>% 
   dplyr::filter(year >= 860 & year <= 2016 ) %>%   # filter out weird years
   dplyr::filter(reclat != 0 | reclong != 0) %>% 
@@ -64,16 +75,14 @@ meteorites <- meteorites %>%
   dplyr::filter(mass > 0) %>% 
   dplyr::mutate(year = as.numeric(year))
 
-# src for bbox 
-# https://gist.github.com/graydon/11198540
-
 meteorites_clean <- meteorites %>% 
   dplyr::filter(reclat <= 49.3457868 & reclat >= 24.7433195) %>% #filter for north and south 
   dplyr::filter(reclong >=  -124.7844079 & reclong <= -66.9513812) # filter for east and west 
 ```
 
+# Exploratory Analysis  
 
-## Meteorites by Mass
+## Meteorites visualized by mass
 
 ```{r, fig.width = 8}
 pal <- colorNumeric(palette = "RdYlBu", domain = meteorites_clean$mass, reverse = T)
@@ -87,7 +96,7 @@ leaflet(data = meteorites_clean, height=500, width=910) %>%
                    stroke = FALSE, fillOpacity = 0.5) %>% 
   
   addLegend("bottomright", pal = pal, values = ~mass,
-            title = "Mass (grams)",
+            title = "Mass (grams) <hr>",
             labFormat = labelFormat(suffix = " g"),
             opacity = 1
   )
@@ -101,7 +110,7 @@ leaflet(data = meteorites_clean, height=500, width=910) %>%
   addFullscreenControl() %>% 
   addProviderTiles(providers$CartoDB.DarkMatter) %>% 
   addHeatmap(lng = ~reclong, lat = ~reclat, 
-             gradient = "viridis", 
+             gradient = "Spectral", 
              minOpacity = 0.1, 
              cellSize = 1, 
              radius = 3, blur = 15)
@@ -130,6 +139,33 @@ leaflet(data = meteorites_clean, height=500, width=910) %>%
             opacity = 1)
 ```
 
+
+Distribution of Meteorites by Years 
+
+```{r}
+# Create a continuous palette function
+pal <- colorBin(
+  palette = "Spectral",bins = 5,
+  domain = meteorites_clean$year, reverse = T)
+
+
+leaflet(data = meteorites_clean, height=500, width=910) %>% 
+  addFullscreenControl() %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  addCircleMarkers(lng = ~reclong, lat = ~reclat,
+                   color = ~pal (year), 
+                   radius = 3,
+                   stroke = FALSE, fillOpacity = 1) %>% 
+  
+  addLegend("bottomleft", 
+            colors =c("#2B83BA", "#ABDDA4", "#FFFFBF","#FDAE61","#D7191C"),
+            labels = c("1600 - 1700", "1700 - 1800", "1800 - 1900", "1900 - 2000", "2000 - 2016"), 
+            title = "Year Found",
+            opacity = 1)
+```
+
+Most of the meteorites were discovered within last century (1900 - 2000)
+
 Frequency distribtion by year 
 
 ```{r}
@@ -142,9 +178,142 @@ hchart(meteorites_clean$year,
   hc_add_theme(hc_theme_monokai())
 ```
 
-## Meteorites via Classification  
 
-Examining wether 
+
+## Density based analysis
+
+### Quadrat Density 
+
+We'll divide the observation into a grid (h = 5, width = 10) and count the points that lie within each quadrat 
+
+```{r warning=FALSE}
+# get the window for the data, i.e. the boundaries 
+W <- owin(xrange = c(min(meteorites_clean$reclong), 
+                     max(meteorites_clean$reclong)),
+          
+          yrange = c(min(meteorites_clean$reclat), 
+                     max(meteorites_clean$reclat)))
+
+# select just the lat/long columns 
+pp1 <- meteorites_clean %>% 
+  dplyr::select(reclong, 
+                reclat)
+
+# convert to ppp object 
+meteorites_ppp <- as.ppp(pp1, W = W)
+
+Q <- quadratcount(meteorites_ppp, nx= 5, ny=10)
+
+# plot results 
+plot(meteorites_ppp, pch=20, cols="#FF1C51", main=NULL)  # Plot points, with the tallies 
+plot(Q, add=TRUE)  # Add quadrat grid
+```
+
+
+### Computing the density 
+```{r}
+
+meteorites_ppp.km <- rescale(meteorites_ppp, 1000, "km")
+
+# Compute the density for each quadrat (in counts per km2)
+Q   <- quadratcount(meteorites_ppp.km, nx= 6, ny=3)
+Q.d <- intensity(Q)
+
+# Plot the density
+
+plot(intensity(Q, image=TRUE), main=NULL, las=1)  # Plot density raster
+plot(meteorites_ppp.km, pch=20, cex=0.6, col="#39FF14", add=TRUE)  # Add points
+```
+
+### Kernel density raster
+
+```{r}
+K1 <- density(meteorites_ppp.km) # Using the default bandwidth
+plot(K1, main=NULL, las=1)
+contour(K1, add=TRUE)
+```
+
+
+## Distance based analysis
+
+We'll apply three difference measures for distance bases analysis: 
+
+* The average nearest neighbor 
+* K & L function 
+* pair correlation function $g$
+
+### Average nearest neighbor analysis (ANN)
+
+Computing the ANN distances between imapct sites. Compute the average *first* nearest neighbor distance (km), set `k = 1`
+
+```{r}
+# set k - 1 for the first nearest neighbor distance 
+mean(nndist(meteorites_ppp.km, k = 1))
+```
+
+Compute the average *second* nearest neighbor, set `k = 2`
+```{r}
+mean(nndist(meteorites_ppp.km, k = 2))
+
+```
+### ANN Plot 
+```{r}
+ANN <- apply(nndist(meteorites_ppp.km, k=1:2000),2,FUN=mean)
+# generate an ANN vs neighbor order plot
+plot(ANN ~ eval(1:2000), type="b", main="ANN Plot", las=1)
+```
+
+The bottom axis shows the neighbor order number and the left axis shows the average distance (km). We can see a linear trend via
+
+### K & L Functions 
+
+Computing the K function
+
+```{r warning=FALSE}
+K <- Kest(meteorites_ppp.km)
+plot(K, main=NULL, las=1)
+```
+
+This plot is visualizing the different estiamtes of $K$ depending on the edge correction. The edge corrections plotted are listed in the legend. 
+
+$K_{iso}$ refers to an *isotropic* implementation
+
+$K_{trans}$ refers to an *translate* implementation
+
+$K_{bord}$ refers to an *border * implementation
+
+$K_{pois}$ refers to an *border * implementation
+
+
+### Kernel density adjusted for covariate
+
+Here we'll estimate the meteorite point process intensity using the mass 
+
+In the following example, a Starbucks store point process’ intensity is estimated following the population density raster covariate
+
+
+
+
+
+
+
+## Hypothesis testing 
+
+Running an average nearest neighbor analysis for impact sites, in this we assume a *uniform point density across space* 
+
+```{r}
+ann.p <- mean(nndist(meteorites_ppp.km, k =1))
+ann.p
+```
+
+The observed average nearest neighbor distance is 0.0002431465 km (0.24 m).
+
+Generate the distribution of an expected 
+
+
+
+
+
 
 
 # Hot Spot Spatial Analysis 
@@ -167,3 +336,95 @@ Our NNI score is less than 1, we can consider this as a good indication of clust
 
 ## Create the hotspot map
 ## Define the hotspot map legend threshold
+
+
+
+
+
+
+
+# Areal Statistics 
+
+## Meteorite Landings by State 
+
+In this section we'll tally the number of meteorites via the State in which they land to gather some areal statistics. 
+
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide'}
+# Downloading US State polygons 
+states <- states(cb = TRUE)
+
+# Convert to sf data
+points <- st_as_sf(meteorites_clean)
+# Set CRS 
+states <- st_transform(x = states, crs = 4326)
+points <- st_transform(x = points, crs = 4326)
+
+
+# Intersection between polygon and points ---------------------------------
+intersection <- st_intersection(x = states, y = points)
+# Count number ofintersections per polygon (i.e. states)
+states$pt_count <- lengths(st_intersects(states, points))
+```
+
+
+```{r, message=FALSE}
+# Interactive Map 
+pal <- colorNumeric(
+  palette = "viridis",domain = states$pt_count, reverse = F, alpha = T)
+
+labels_info = sprintf(
+  "<h2> %s </h2>
+  <hr>
+  Meteorites: %s ",
+  states$NAME, 
+  states$pt_count
+) %>% lapply(htmltools::HTML)
+
+leaflet(states) %>%
+  addProviderTiles("CartoDB.DarkMatter") %>%
+  addPolygons(fillColor = ~pal(pt_count), 
+              weight = 2,
+              opacity = 0.25,
+              color = "white",
+              dashArray = "1",
+              fillOpacity = 0.6,
+              
+              highlight = highlightOptions(
+                weight = 3,
+                color = "#8ffcff",
+                fillColor = "#8ffcff",
+                dashArray = "1",
+                fillOpacity = 0.6,
+                bringToFront = TRUE), 
+              
+              label = labels_info, 
+              labelOptions = labelOptions(
+                style = list("font-family" = "arial",
+                             "font-style" = "bold",
+                             "color" = "#FF1C51",
+                             "background" = "black",
+                             "border-color" = "#FFD300")
+                )
+              ) %>%
+  
+  setView(-98.5795, 39.8282, zoom=3) %>% 
+  
+  addLegend("bottomright", 
+            pal = pal, 
+            values = ~pt_count,
+            title = "Meteorites <hr>",
+            opacity = 1)
+```
+
+
+```{r}
+sfno <- st_as_sf(mapsimple)
+st_crs(sfno)
+carto_ref <- cartogram(states, "pt_count")
+```
+
+
+
+
+

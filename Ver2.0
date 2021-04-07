@@ -1,0 +1,17 @@
+---
+title: "Metorite Landings"
+author: "Patrick Reza Schnurbusch"
+date: "05/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This dataset was obtained from Kaggle [here](https://www.kaggle.com/nasa/meteorite-landings) and includes the lat/lon coordinates of meteorite impact sites.  
+There 45,000 impact sites and in this analysis we will be analyzing the ones inside of the continential United States. 
+
+# Point Pattern Analysis 
+
+# Areal 

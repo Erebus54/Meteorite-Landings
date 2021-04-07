@@ -1,0 +1,244 @@
+---
+title: "Metorite Landings"
+author: "Patrick Reza Schnurbusch"
+date: "05/04/2021"
+output: 
+  html_document:
+    theme: spacelab
+    highlight: default
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Amelia)
+library(dplyr)
+library(plotly)
+
+library(leaflet)
+library(leaflet.providers)
+library(leaflet.extras)
+
+library(RColorBrewer)
+library(sf)
+
+meteorites <- read.csv("./meteorite-landings.csv", encoding = "UTF-8")
+```
+
+# Preamble 
+
+This dataset was obtained from Kaggle [here](https://www.kaggle.com/nasa/meteorite-landings) and includes the lat/lon coordinates of meteorite impact sites.  
+There 45,000 impact sites and in this analysis we will be analyzing the ones inside of the continential United States. 
+
+# Data Cleaning 
+
+First we need to check for data integrity. If we count the NA's we can see that they are most frequent in the lat/long, year, and then mass.
+
+```{r}
+colSums(is.na(meteorites))
+```
+
+We can confirm this visually by passing our dataset to a missing values map from the 'Amelia' package. 
+
+```{r}
+missmap(meteorites, 
+        main = "Missingness Map of Meteorite Impact Dataset",
+        legend = T, 
+        y.labels = NULL, 
+        y.at = NULL,
+        col = c("#ff6961", "#84d9ff"))
+```
+
+If we calculate the percentage of missing values in relation to all values (i.e. product = # of rows * # of columns) we get approx 3.2% missing. 
+
+```{r}
+sum(is.na(meteorites))/prod(dim(meteorites))
+```
+
+This number is low enough where we can simply filter these data-points out of our dataset and proceed without the need over imputation. We remove the missing values from our dataset and run a missing values map to confirm this as shown below. 
+
+```{r}
+# Filtering out missing values 
+meteorites_clean <- meteorites %>% 
+  dplyr::filter(!is.na(year) & !is.na(mass) & !is.na(reclat) & !is.na(reclong)) 
+
+missmap(meteorites_clean, 
+        main = "Missingness Map of Meteorite Impact Dataset",
+        legend = T, 
+        y.labels = NULL, 
+        y.at = NULL,
+        col = c("#ff6961", "#84d9ff"))
+
+```
+
+If we run `summary()` We can see below two (2) main issues: 
+
+```{r}
+summary(meteorites_clean)
+```
+
+First, We can see some meteorites have a mass of 0 grams, this could be because the actual mass was so small it did not register past a decimal point. To correct this we can filter these objects out. 
+
+```{r}
+meteorites_clean <- meteorites_clean %>% 
+  dplyr::filter(mass != 0)
+```
+
+
+2. We can also see that our data starts at 601 and ends at 2101. We can assume these to be errors, and will need to filter out. 
+
+We will use 2016 as our 'ceiling' or the max point we want to find out. We can remove these rows and then make a density plot to see where our 'floor' should, that is to mean the lowest values we want filtered out. 
+
+```{r}
+meteorites_clean <- meteorites_clean %>% 
+  dplyr::filter(year <= 2016)
+ 
+density <- density(meteorites_clean$year)
+plot_ly(x = ~density$x, y = ~density$y, type = 'scatter', mode = 'lines', fill = 'tozeroy') %>% 
+  layout(xaxis = list(title = 'Year'),
+         yaxis = list(title = 'Density'))
+```
+We can see the number of meteorite impacts increases over time as both our understanding and technology improves, however we see a significant jump approx after 1960's. With this in mind we'll filter out for values before 1960, this choice is arbitrary admittedly but will give us a clearer picture of 'recent' meteorite impact sites in our research area. 
+
+```{r}
+meteorites_clean <- meteorites_clean %>% 
+  dplyr::filter(year >= 1960)
+```
+
+Next we need to filter out for this impacting the continental united states. To achieve this we'll need to select the points for the north/south and east/west boundaries of the continental 
+
+
+```{r}
+
+# hacky method using the northern/southern, and eastern/western most coords to create a box to filter on 
+meteorites_usa <- meteorites_clean %>% 
+  dplyr::filter(reclat <= 49.3457868 & reclat >= 24.7433195) %>% #filter for north and south 
+  dplyr::filter(reclong >=  -124.7844079 & reclong <= -66.9513812) # filter for east and west 
+```
+
+With our contemporary US state boundary file we will need to convert our dataframe to an sf object to perform the operation. 
+
+Now with out dataset properly cleaned and prepped we can move onto the Point-Pattern-Analysis (PPP) step. 
+
+# Point Pattern Analysis
+
+First we'll map out all 971 points on a map to see how the data appears. 
+
+## Mass
+
+### Impacts by Mass
+
+Here we have mapped out the impact sites, color coding and scaling the size of each point by mass (g).  
+
+```{r, fig.width = 8}
+pal <- colorNumeric(palette = "RdBu", domain = meteorites_usa$mass, reverse = T)
+
+leaflet(data = meteorites_usa, height=500, width=910) %>% 
+        addFullscreenControl() %>% 
+        addProviderTiles(providers$Stamen.TonerLite)%>% 
+        addCircleMarkers(lng = ~reclong, lat = ~reclat,
+                         color = ~pal(mass), 
+                         radius = meteorites_usa$mass/1e5, 
+                         stroke = FALSE, fillOpacity = 1) %>% 
+        
+        addLegend("bottomright", pal = pal, values = ~mass,
+                  title = "Mass (grams) <hr>",
+                  labFormat = labelFormat(suffix = " g"),
+                  opacity = 1)
+```
+We can see some clustering along the border between New Mexico & Texas but mostly it's sporadic and random.   
+
+## Impact Mass Distribution 
+
+Below we have boxplotted the points to gauge the frequency. We can see that the mass clusters below 50K grams, with the median being ~300g. 
+```{r}
+plot_ly(meteorites_usa) %>% 
+        add_boxplot(y = ~mass, jitter = 0.5, pointpos = -1.8, boxpoints = 'all', 
+                    marker = list(color = '#36C5F0'), line = list(color = '#FFFC00'), name = "mass(g)") %>% 
+        layout(yaxis = list(title = 'mass(g)')) %>% 
+        
+        layout(plot_bgcolor='black') %>% 
+        layout(paper_bgcolor='black') 
+```
+
+## Heatmap by Mass of Impact
+Here we have produced a heatmap to more clearly illustrate clusters for impact sites. We can see clearly that our original site is indeed a cluster but also that along California/Arizona is also one for consideration. 
+
+```{r}
+leaflet(data = meteorites_usa, height=500, width=910) %>% 
+        addFullscreenControl() %>% 
+        addProviderTiles(providers$Stamen.TonerLite) %>% 
+        addHeatmap(lng = ~reclong, lat = ~reclat, 
+                   gradient = "magma", 
+                   minOpacity = 0.1, 
+                   cellSize = 1, 
+                   radius = 3, blur = 15)
+
+```
+
+### Meteorites by Observed Status 
+
+In our dataset meteorites are coded via whether they were spotted on the ground after impact ("found") or while in the mid-fall ("fell)
+
+Overwhelmingly we can see most meteorites were spotted while on the ground after-impact was made, we have modified the size argument to help make the quantity more acute on our map. 
+```{r, fig.width = 8}
+pal <- colorFactor(c("#FF1C51", "#006AFF"), domain = c("Fell", "Found"))
+
+labels <- c("Mid-Air", "Ground")
+
+leaflet(data = meteorites_usa, height=500, width=910) %>% 
+        addFullscreenControl() %>% 
+        addProviderTiles(providers$Stamen.TonerLite) %>% 
+        addCircleMarkers(lng = ~reclong, lat = ~reclat,
+                         color = ~pal(fall), 
+                         radius = ~ifelse(fall == "Found", 2, 4),
+                         stroke = FALSE, fillOpacity = 1) %>% 
+        
+        addLegend("bottomright", pal = pal, values = ~fall,
+                  title = "<u>Found Status</u>",
+                  opacity = 1, 
+                  labFormat = function(type, cuts, p){
+                          paste0(labels)})
+```
+
+## Distribution of Meteorites by Years 
+
+Here we can interestingly that the more recent impact sites are now impacting California/Arizona and that the datapoints along New Mexico /Arizona are mostly 'older' impact sites. 
+```{r}
+pal <- colorBin(
+        palette = "RdBu",bins = 5,
+        domain = meteorites_usa$year, reverse = T)
+
+
+leaflet(data = meteorites_usa, height=500, width=910) %>% 
+        addFullscreenControl() %>% 
+        addProviderTiles(providers$Stamen.TonerLite) %>% 
+        addCircleMarkers(lng = ~reclong, lat = ~reclat,
+                         color = ~pal (year), 
+                         radius = 3,
+                         stroke = FALSE, fillOpacity = 1) %>% 
+        
+        addLegend("bottomright", pal = pal, values = ~year,
+                  title = "<u>Year Found</u>",
+                  labFormat = labelFormat(),
+                  opacity = 0.9)
+```
+
+## Frequency Distribution by year 
+
+```{r}
+plot_ly(data = meteorites_usa, x = ~year, type = 'histogram') %>% 
+  layout(xaxis = list(title = "Year"), 
+         yaxis = list(title = "Impacts"))
+```
+## Cumulative Impacts by Year
+```{r}
+plot_ly(data = meteorites_usa, x = ~year, type = 'histogram', cumulative = list(enabled=TRUE)) %>% 
+  layout(xaxis = list(title = "Year"), 
+         yaxis = list(title = "Impacts"))
+```
+# Density Based Analysis 
