@@ -138,7 +138,8 @@ Here we have mapped out the impact sites, color coding and scaling the size of e
 pal <- colorNumeric(palette = "RdBu", domain = meteorites_usa$mass, reverse = T)
 
 leaflet(data = meteorites_usa, height=500, width=910) %>% 
-        addFullscreenControl() %>% 
+        addFullscreenControl(position = "topright") %>% 
+        addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite)%>% 
         addCircleMarkers(lng = ~reclong, lat = ~reclat,
                          color = ~pal(mass), 
@@ -170,7 +171,8 @@ Here we have produced a heatmap to more clearly illustrate clusters for impact s
 
 ```{r}
 leaflet(data = meteorites_usa, height=500, width=910) %>% 
-        addFullscreenControl() %>% 
+        addFullscreenControl(position = "topright") %>% 
+        addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite) %>% 
         addHeatmap(lng = ~reclong, lat = ~reclat, 
                    gradient = "magma", 
@@ -191,7 +193,8 @@ pal <- colorFactor(c("#FF1C51", "#006AFF"), domain = c("Fell", "Found"))
 labels <- c("Mid-Air", "Ground")
 
 leaflet(data = meteorites_usa, height=500, width=910) %>% 
-        addFullscreenControl() %>% 
+        addFullscreenControl(position = "topright") %>% 
+        addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite) %>% 
         addCircleMarkers(lng = ~reclong, lat = ~reclat,
                          color = ~pal(fall), 
@@ -215,7 +218,8 @@ pal <- colorBin(
 
 
 leaflet(data = meteorites_usa, height=500, width=910) %>% 
-        addFullscreenControl() %>% 
+        addFullscreenControl(position = "topright") %>% 
+        addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite) %>% 
         addCircleMarkers(lng = ~reclong, lat = ~reclat,
                          color = ~pal (year), 
@@ -228,17 +232,74 @@ leaflet(data = meteorites_usa, height=500, width=910) %>%
                   opacity = 0.9)
 ```
 
-## Frequency Distribution by year 
+## Impacts over Time 
 
 ```{r}
-plot_ly(data = meteorites_usa, x = ~year, type = 'histogram') %>% 
-  layout(xaxis = list(title = "Year"), 
-         yaxis = list(title = "Impacts"))
+plot_ly(data = meteorites_usa,
+        x = ~year,
+        type = "histogram",
+        cumulative = list(enabled=TRUE), 
+        marker = list(color = '#006AFF'), 
+        name = "Cumulative") %>%
+        
+        add_trace(data = meteorites_usa,
+                  x = ~year,
+                  type = "histogram", 
+                  cumulative = list(enabled=F), 
+                  marker = list(color = '#00ffff'),
+                  name = "Per Year") %>% 
+        
+        layout(title = "Meteorite Impacts in America (1960 - 2016)",
+               titlefont = list(
+                       family = "Agency FB", size = 45, color = '#ffffff'),
+               font = list(family = "Agency FB", size = 25),
+               margin = 10,
+               paper_bgcolor='black',
+               plot_bgcolor='black',
+               xaxis = list(title = "Year", 
+                            color = '#ffffff'),
+               yaxis = list(title = "No. of Impacts", 
+                            color = '#ffffff'))
+
 ```
-## Cumulative Impacts by Year
+
+# Meteorite Classifications
+
+one of a large number of [meteorite classifications](https://en.wikipedia.org/wiki/Meteorite_classification) based on physical, chemical, and other characteristics 
+
 ```{r}
-plot_ly(data = meteorites_usa, x = ~year, type = 'histogram', cumulative = list(enabled=TRUE)) %>% 
-  layout(xaxis = list(title = "Year"), 
-         yaxis = list(title = "Impacts"))
+# Create a frequency for our class variable 
+class_freq_table <- meteorites_usa %>% 
+        dplyr::group_by(recclass) %>% 
+        dplyr::tally() %>% 
+        dplyr::ungroup() %>% 
+        dplyr::arrange(desc(n)) %>% 
+        dplyr::top_n(n = 10, wt = n)
+
+
+colors =  brewer.pal(10, "PuOr")
+
+plot_ly(class_freq_table, labels = ~recclass, values = ~n, type = 'pie',
+        textposition = 'inside',
+        textinfo = 'label+percent',
+        insidetextfont = list(color = '#FFFFFF'),
+        
+        marker = list(colors = colors,line = list(color = 'white', width = 2)),
+        showlegend = FALSE, 
+        hoverinfo = 'text',
+        text = ~paste('<b>Meteorite Classification:</b>', recclass, "<br>", 
+                      "<b>No. of Impacts:</b>", n, "</br>", 
+                      "<b>No. of Impacts:</b>", round(n/sum(n)*100, 1),"%", "</br>")) %>% 
+        
+        layout(title = 'Meteorites Classes in USA (1960 - 2016)',
+                      xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+                      yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE)) %>% 
+        
+        layout(titlefont = list(
+                       family = "Agency FB", size = 45, color = '#ffffff'),
+               font = list(family = "Agency FB", size = 25),
+               margin = 10,
+               paper_bgcolor='black',
+               plot_bgcolor='black')
 ```
-# Density Based Analysis 
+
