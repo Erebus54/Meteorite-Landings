@@ -114,7 +114,6 @@ density <- density(meteorites_clean$year)
 
 plot_ly(x = ~density$x, y = ~density$y, type = 'scatter', 
         mode = 'lines', fill = 'tozeroy', 
-        height = 500, width = 910, 
         fillcolor = "#DB4437", 
         line = list(color = 'white')) %>%
    
@@ -145,7 +144,6 @@ density <- density(meteorites_clean$year)
 
 plot_ly(x = ~density$x, y = ~density$y, type = 'scatter', 
         mode = 'lines', fill = 'tozeroy', 
-        height = 500, width = 910, 
         fillcolor = "#4285F4", 
         line = list(color = 'white')) %>%
   
@@ -191,9 +189,9 @@ First we'll map out all 971 points on a map to see how the data appears.
 Here we have mapped out the impact sites, color coding and scaling the size of each point by the mass (g).  
 
 ```{r, fig.width = 8}
-pal <- colorNumeric(palette = "RdBu", domain = meteorites_usa$mass, reverse = T)
+pal <- colorNumeric(palette = "RdYlBu", domain = meteorites_usa$mass, reverse = T)
 
-leaflet(data = meteorites_usa, height=500, width=910) %>% 
+leaflet(data = meteorites_usa) %>% 
         addFullscreenControl(position = "topright") %>% 
         addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite)%>% 
@@ -207,14 +205,13 @@ leaflet(data = meteorites_usa, height=500, width=910) %>%
                   labFormat = labelFormat(suffix = " g"),
                   opacity = 1)
 ```
-We can see some clustering along the border between New Mexico & Texas but mostly it's sporadic and random everywhere else. We also see an impact in california that is massive relatively speakin, clocking in at a mass of <b>`r paste(format(max(meteorites_usa$mass), big.mark = ","),"grams", sep = " ")` </b>     
+We can see some clustering along the border between New Mexico & Texas but mostly it's sporadic and random everywhere else. We also see an impact in california that is massive relatively speakin, clocking in at a mass of <b>`r paste(format(max(meteorites_usa$mass), big.mark = ","),"grams", sep = " ")` ~ `r paste(format(max(meteorites_usa$mass/1000), big.mark = ","),"kg", sep = " ")`</b>     
 
 ## Impact Mass Distribution 
 
 Below we have boxplotted the points to gauge the frequency. We can see that the mass clusters below 50K grams, with the median being ~300g. 
 ```{r}
-plot_ly(meteorites_usa, 
-        height = 500, width = 910) %>% 
+plot_ly(meteorites_usa) %>% 
         add_boxplot(y = ~mass, jitter = 0.5, pointpos = -1.8, boxpoints = 'all', 
                     marker = list(color = '#36C5F0'), 
                     line = list(color = '#FFFC00'), 
@@ -223,22 +220,6 @@ plot_ly(meteorites_usa,
         
         layout(plot_bgcolor='black') %>% 
         layout(paper_bgcolor='black') 
-```
-
-## Heatmap by Mass of Impact
-Here we have produced a heatmap to more clearly illustrate clusters for impact sites. We can see clearly that our original site is indeed a cluster but also that along California/Arizona is also one for consideration. 
-
-```{r}
-leaflet(data = meteorites_usa, height=500, width=910) %>% 
-        addFullscreenControl(position = "topright") %>% 
-        addResetMapButton() %>% 
-        addProviderTiles(providers$Stamen.TonerLite) %>% 
-        addHeatmap(lng = ~reclong, lat = ~reclat, 
-                   gradient = "magma", 
-                   minOpacity = 0.1, 
-                   cellSize = 1, 
-                   radius = 3, blur = 15)
-
 ```
 
 ### Meteorites by Observed Status 
@@ -252,7 +233,7 @@ pal <- colorFactor(c("#FF1C51", "#006AFF"), domain = c("Fell", "Found"))
 
 labels <- c("Mid-Air", "Ground")
 
-leaflet(data = meteorites_usa, height=500, width=910) %>% 
+leaflet(data = meteorites_usa) %>% 
         addFullscreenControl(position = "topright") %>% 
         addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite) %>% 
@@ -277,7 +258,7 @@ pal <- colorBin(
         domain = meteorites_usa$year, reverse = T)
 
 
-leaflet(data = meteorites_usa, height=500, width=910) %>% 
+leaflet(data = meteorites_usa) %>% 
         addFullscreenControl(position = "topright") %>% 
         addResetMapButton() %>% 
         addProviderTiles(providers$Stamen.TonerLite) %>% 
@@ -300,8 +281,7 @@ plot_ly(data = meteorites_usa,
         type = "histogram",
         cumulative = list(enabled=TRUE), 
         marker = list(color = '#006AFF'), 
-        name = "Cumulative", 
-        height = 500, width = 910) %>%
+        name = "Cumulative") %>%
         
         add_trace(data = meteorites_usa,
                   x = ~year,
@@ -312,8 +292,11 @@ plot_ly(data = meteorites_usa,
         
         layout(title = "Meteorite Impacts in America (1960 - 2016)",
                titlefont = list(
-                       family = "Agency FB", size = 45, color = '#ffffff'),
-               font = list(family = "Agency FB", size = 25),
+                       family = "Agency FB", 
+                       size = 45, 
+                       color = '#ffffff'),
+               font = list(family = "Agency FB", 
+                           size = 25),
                margin = 10,
                paper_bgcolor='black',
                plot_bgcolor='black',
@@ -357,7 +340,7 @@ plot_ly(class_freq_table, labels = ~recclass, values = ~n, type = 'pie',
         textposition = 'inside',
         textinfo = 'label+percent',
         insidetextfont = list(color = '#FFFFFF'),
-        height = 500, width = 910,
+        # height = 500, width = 910,
         
         marker = list(colors = colors,line = list(color = 'white', width = 2)),
         showlegend = FALSE, 
@@ -370,9 +353,11 @@ plot_ly(class_freq_table, labels = ~recclass, values = ~n, type = 'pie',
                       xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
                       yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE)) %>% 
         
-        layout(titlefont = list(
-                       family = "Agency FB", size = 45, color = '#ffffff'),
-               font = list(family = "Agency FB", size = 25),
+        layout(titlefont = list(family = "Agency FB", 
+                                size = 45, 
+                                color = '#ffffff'),
+               font = list(family = "Agency FB", 
+                           size = 25),
                margin = 10,
                paper_bgcolor='black',
                plot_bgcolor='black')
