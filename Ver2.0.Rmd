@@ -167,20 +167,76 @@ Next we need to filter out for this impacting the continental united states. To 
 
 
 ```{r}
+library(sf) 
+library(dplyr)
+library(USAboundaries) 
 
-# hacky method using the northern/southern, and eastern/western most coords to create a box to filter on 
+# Read in America 
+# Exclude following state polygons 
+exclusion <- c("Alaska", "Hawaii", "Puerto Rico")
+
+america_bounds <- USAboundaries::us_boundaries(type = "state", resolution = "low") %>% 
+  # Exclude non-contiguous states 
+  dplyr::filter(!name %in% exclusion) %>% 
+  # Set the coordinate reference system (crs)
+  st_transform(crs = 4326)
+
+# Dissolve boundaries into 1 polygon 
+america_bounds <- america_bounds %>% 
+  st_union()
+
+# points 
+meteorites <- read.csv("./meteorite-landings.csv", encoding = "UTF-8")
+
+# Filtering out missing values 
+meteorites_clean <- meteorites %>% 
+  dplyr::filter(!is.na(year) & !is.na(mass) & !is.na(reclat) & !is.na(reclong)) 
+
+meteorites_clean <- meteorites_clean %>% 
+  st_as_sf(coords = c("reclong", "reclat"), crs = 4326) 
+
+# set a buffer of 5km around our points 
+buffer <- st_buffer(meteorites_clean, dist = 5000) 
+
+# Filter for points that lie inside the USA 
+meteorites_clean$in_bounds <- st_intersects(meteorites_clean, america_bounds, sparse = F) 
 meteorites_usa <- meteorites_clean %>% 
-  dplyr::filter(reclat <= 49.3457868 & reclat >= 24.7433195) %>% #filter for north and south 
-  dplyr::filter(reclong >=  -124.7844079 & reclong <= -66.9513812) # filter for east and west 
+  dplyr::filter(in_bounds == T)
 ```
 
-With our contemporary US state boundary file we will need to convert our dataframe to an sf object to perform the operation. 
 
-Now with out dataset properly cleaned and prepped we can move onto the Point-Pattern-Analysis (PPP) step. 
+Now with out dataset properly cleaned and prepped we can move onto the Exploratory Data Analaysis (EDA) step. 
 
 # Exploratory Data Analysis (EDA)
 
-First we'll map out all 971 points on a map to see how the data appears. 
+First let's examine the frequency over time 
+```{r}
+Impacts_by_year <- meteorites_usa %>% 
+  dplyr::group_by(year) %>% 
+  dplyr::summarise(n = n()) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::arrange(year) %>% 
+  data.frame()
+
+plot_ly(Impacts_by_year, x = ~year, y = ~n, type = 'bar', 
+        marker = list(color = '#ADFF2F'), 
+        name = "") %>% 
+  layout(hovermode = "x-unified",
+         title = "Meteorite Impacts in America Over Time",
+         titlefont = list(
+           family = "Agency FB", size = 20, color = '#ffffff'),
+         font = list(family = "Agency FB", size = 16),
+         margin = 10,
+         paper_bgcolor='black',
+         plot_bgcolor='black',
+         xaxis = list(title = "", 
+                      color = '#ffffff'),
+         yaxis = list(title = "No. of Impacts", 
+                      color = '#ffffff'))
+```
+
+
+We'll map out all 971 points on a map to see how the data appears. 
 
 ## Mass
 
@@ -264,7 +320,7 @@ leaflet(data = meteorites_usa) %>%
         addProviderTiles(providers$Stamen.TonerLite) %>% 
         addCircleMarkers(lng = ~reclong, lat = ~reclat,
                          color = ~pal (year), 
-                         radius = 3,
+                         radius = 4,
                          stroke = FALSE, fillOpacity = 1) %>% 
         
         addLegend("bottomright", pal = pal, values = ~year,
@@ -334,7 +390,7 @@ class_freq_table <- meteorites_usa %>%
         dplyr::top_n(n = 10, wt = n)
 
 
-colors =  brewer.pal(10, "PuOr")
+colors =  brewer.pal(10, "Spectral")
 
 plot_ly(class_freq_table, labels = ~recclass, values = ~n, type = 'pie',
         textposition = 'inside',
@@ -354,12 +410,48 @@ plot_ly(class_freq_table, labels = ~recclass, values = ~n, type = 'pie',
                       yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE)) %>% 
         
         layout(titlefont = list(family = "Agency FB", 
-                                size = 45, 
+                                size = 20, 
                                 color = '#ffffff'),
                font = list(family = "Agency FB", 
-                           size = 25),
+                           size = 12),
                margin = 10,
                paper_bgcolor='black',
                plot_bgcolor='black')
 ```
 
+# Point Pattern Analysis 
+
+```{r, include=FALSE}
+library(spatstat)
+```
+
+## Density Based 
+
+```{r warning=FALSE}
+# get the window for the data, i.e. the boundaries 
+W <- owin(xrange = c(min(meteorites_usa$reclong), 
+                     max(meteorites_usa$reclong)),
+          
+          yrange = c(min(meteorites_usa$reclat), 
+                     max(meteorites_usa$reclat)))
+
+# select just the lat/long columns 
+pp1 <- meteorites_usa %>% 
+  dplyr::select(reclong, 
+                reclat)
+
+# convert to ppp object 
+meteorites_ppp <- as.ppp(pp1, W = W)
+
+Q <- quadratcount(meteorites_ppp, nx= 5, ny=10)
+
+# plot results 
+plot(meteorites_ppp, pch=20, cols="#FF1C51", main=NULL)  # Plot points, with the tallies 
+plot(Q, add=TRUE)  # Add quadrat grid
+```
+```
+
+
+## Distance Based 
+
+## Hypothesis Tests 
